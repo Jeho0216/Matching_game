@@ -122,7 +122,19 @@
     </ToolchainSettings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="CLCD.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="CLCD.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="main.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="UART0.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="UART0.h">
       <SubType>compile</SubType>
     </Compile>
   </ItemGroup>
