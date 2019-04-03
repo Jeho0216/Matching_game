@@ -78,6 +78,33 @@ void INT0_init(){
 	sei();
 }
 
+void game_initialize(int *select_1, int *select_2, uint8_t *flag, int *warning){
+	int i, j;
+	//게임에 필요한 각종 변수 초기화
+	select = 0;
+	warning = 0;
+	flag = 0;
+	row = 0;
+	col = 0;
+	//게임에 필요한 배열 초기화
+	for(i = 0; i < 2; i++){
+		for(j = 0; j < 16; j++)
+			select_flag[i][j] = 0;
+	}
+	for(i = 0; i < 3; i++){
+		select_1[i] = 0;
+		select_2[i] = 0;
+	}
+	//LCD 초기화면 출력.
+	LCD_write_command(0x0C);		//커서 출력 금지
+	LCD_clear();
+	PORTF = 0x00;
+	LCD_goto_XY(0, 0);
+	LCD_write_string("**Memory game**");
+	LCD_goto_XY(1, 0);
+	LCD_write_string("Press 1st KEY");
+}
+
 void create_random_num(uint8_t array[][8]){
 	uint8_t flag[8] = {0};		//생성된 랜덤 숫자가 몇번 발생했는지 확인하기 위한 배열.
 	int rand_num;
@@ -182,12 +209,7 @@ int main(void){
 	
 	while(1){
 		if(game_state == 0){		//게임 진행을 위해서 초기 설정부분.
-			LCD_clear();
-			PORTF = 0x00;
-			LCD_goto_XY(0, 0);
-			LCD_write_string("**Memory game**");
-			LCD_goto_XY(1, 0);
-			LCD_write_string("Press 1st KEY");
+			game_initialize(select_1, select_2, &flag, &warning);
 			while((PIND & 0x01) != 0){};		//1번째 버튼 입력전까지 NOP
 			
 			create_random_num(random_array);
@@ -196,11 +218,12 @@ int main(void){
 			_delay_ms(2000);
 			//정답을 보여주고 5초뒤 숫자를 가려줌.
 			print_game_board_LCD();
-			INT0_init();			//여기서부터 인터럽트 허용.
 			LCD_write_command(0x0F);
 			game_state = 1;
 		}
 		else{						//실제 게임 시작.
+			INT0_init();			//여기서부터 인터럽트 허용.
+			printf("state = %d, flag = %d\n", select, flag);
 			while(game_state == 1){
 				LCD_goto_XY(row, col * 2);		//row, col의 범위가 0 ~ 7까지이므로, LCD에 2를 곱해서 출력.
 				if(select == 1 && flag == 0){				//첫 번째 숫자를 선택했을 경우,
@@ -208,11 +231,13 @@ int main(void){
 					select_1[1] = col;
 					select_1[2] = random_array[row][col];
 					flag = 1;
+					printf("select 1 : %d\n", select_1[2]);
 				}
 				else if(select == 2 && flag == 1){			//두 번째 숫자를 선택했을 경우,
 					select_2[0] = row;
 					select_2[1] = col;
 					select_2[2] = random_array[row][col];
+					printf("selcet 2 : %d\n", select_2[2]);
 					//숫자 선택 끝나고 정답 여부 확인.
 					check_is_matched(select_1, select_2, &warning);
 					flag = 0;
@@ -225,7 +250,8 @@ int main(void){
 					print_game_over_LCD();
 					_delay_ms(500);
 					warning = 0;
-					cli();		//버튼 인터럽트 금지.
+					EIMSK = 0x00;		//버튼 인터럽트 금지.
+					cli();
 					game_state = 0;
 				}
 			}
