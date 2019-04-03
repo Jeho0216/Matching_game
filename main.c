@@ -36,6 +36,7 @@ ISR(INT0_vect){		//좌측키
 }
 
 ISR(INT1_vect){		//중간키
+	printf("INT1 exeuted\n");
 	if(select == 0){		//첫번째 선택.
 		if(select_flag[row][col] != 1){
 			LCD_write_data(random_array[row][col] + 48);		//선택한 위치의 숫자 출력
@@ -75,14 +76,14 @@ void PORT_init(){
 void INT0_init(){
 	EIMSK = (1 << INT0 | 1 << INT1 | 1 << INT2);
 	EICRA = (1 << ISC01 | 1 << ISC11 | 1 << ISC21);
-	sei();
 }
 
-void game_initialize(int *select_1, int *select_2, uint8_t *flag, int *warning){
+void game_initialize(int *select_1, int *select_2, uint8_t *flag, int *warning, int *success_count){
 	int i, j;
 	//게임에 필요한 각종 변수 초기화
 	select = 0;
-	warning = 0;
+	*success_count = 0;
+	*warning = 0;
 	flag = 0;
 	row = 0;
 	col = 0;
@@ -109,7 +110,6 @@ void create_random_num(uint8_t array[][8]){
 	uint8_t flag[8] = {0};		//생성된 랜덤 숫자가 몇번 발생했는지 확인하기 위한 배열.
 	int rand_num;
 	int i = 0, j = 0;
-	srand(time(NULL));		//같은 패턴의 랜덤수가 나오는 이유. MCU에서는 시간을 읽어줄 OS가 존재하지 않음.
 	
 	for(i = 0; i < 2; i++){
 		for(j = 0; j < 8; j++){
@@ -149,7 +149,7 @@ void print_random_num_LCD(uint8_t array[][8]){		//CLCD에 정답 출력.
 	}
 }
 
-void print_game_board_LCD(){
+void print_game_board_LCD(){		//게임판 출력함수
 	int i, j;
 	LCD_goto_XY(0, 0);
 	for(i = 0; i < 2; i++){
@@ -162,7 +162,22 @@ void print_game_board_LCD(){
 	LCD_goto_XY(0, 0);
 }
 
-void print_game_over_LCD(){
+void print_game_clear_LCD(){		//게임클리어 화면 출력함수
+	int i, j;
+	LCD_goto_XY(0, 0);
+	for(i = 0; i < 2; i++){
+		for(j = 0; j < 16; j++){
+			LCD_write_data('*');
+		}
+		LCD_goto_XY(1, 0);
+	}
+	LCD_goto_XY(0, 4);
+	LCD_write_string("GAME");
+	LCD_goto_XY(1, 7);
+	LCD_write_string("CLEAR");
+}
+
+void print_game_over_LCD(){		//게임오버 화면 출력함수.
 	int i, j;
 	LCD_goto_XY(0, 0);
 	for(i = 0; i < 2; i++){
@@ -177,9 +192,10 @@ void print_game_over_LCD(){
 	LCD_write_string("OVER");
 }
 
-void check_is_matched(int *select_1, int *select_2, int *warning){
+void check_is_matched(int *select_1, int *select_2, int *warning, int *success_count){		//선택한 숫자 조건 검사함수
 	if(select_1[2] == select_2[2]){		//성공했을 경우,
 		printf("success\n");
+		(*success_count)++;
 	}
 	else{								//실패했을 경우,
 		printf("fail\n");
@@ -200,19 +216,23 @@ int main(void){
 	int select_1[3] = {0,}, select_2[3] = {0,};		//선택한 숫자의 행, 열, 값을 저장하는 배열.
 	uint8_t game_state = 0;			//게임 상태. 0 : 게임종료, 1 : 게임진행중
 	uint8_t flag = 0;				//while문안의 if문을 한번씩만 실행하도록 하기위한 변수.
+	int success_count = 0;
 	int warning = 0;
+	int rand_cnt = 0;
 	
 	PORT_init();
+	INT0_init();
 	
 	stdout = &OUTPUT;
 	stdin = &INPUT;
 	
 	while(1){
 		if(game_state == 0){		//게임 진행을 위해서 초기 설정부분.
-			game_initialize(select_1, select_2, &flag, &warning);
+			game_initialize(select_1, select_2, &flag, &warning, &success_count);
 			while((PIND & 0x01) != 0){};		//1번째 버튼 입력전까지 NOP
-			
+			srand(rand_cnt);		//같은 패턴의 랜덤수가 나오는 것을 방지
 			create_random_num(random_array);
+			rand_cnt++;
 			print_random_num_UART(random_array);
 			print_random_num_LCD(random_array);
 			_delay_ms(2000);
@@ -221,9 +241,10 @@ int main(void){
 			LCD_write_command(0x0F);
 			game_state = 1;
 		}
-		else{						//실제 게임 시작.
-			INT0_init();			//여기서부터 인터럽트 허용.
-			printf("state = %d, flag = %d\n", select, flag);
+		else{						//게임 시작.
+			EIFR = 0x00;
+			sei();		//인터럽트 허용
+			printf("select = %d, flag = %d\n", select, flag);
 			while(game_state == 1){
 				LCD_goto_XY(row, col * 2);		//row, col의 범위가 0 ~ 7까지이므로, LCD에 2를 곱해서 출력.
 				if(select == 1 && flag == 0){				//첫 번째 숫자를 선택했을 경우,
@@ -231,27 +252,31 @@ int main(void){
 					select_1[1] = col;
 					select_1[2] = random_array[row][col];
 					flag = 1;
+					printf("select = %d, flag = %d\n", select, flag);
 					printf("select 1 : %d\n", select_1[2]);
 				}
 				else if(select == 2 && flag == 1){			//두 번째 숫자를 선택했을 경우,
 					select_2[0] = row;
 					select_2[1] = col;
 					select_2[2] = random_array[row][col];
+					printf("select = %d, flag = %d\n", select, flag);
 					printf("selcet 2 : %d\n", select_2[2]);
 					//숫자 선택 끝나고 정답 여부 확인.
-					check_is_matched(select_1, select_2, &warning);
+					check_is_matched(select_1, select_2, &warning, &success_count);
 					flag = 0;
 					select = 0;
 				}
 				PORTF |= ((0x01) << warning) - 1;		//경고 LED 출력. 0x01 -> 0x03 -> 0x07 순서대로 출력함.
+				if(success_count >= 8){
+					print_game_clear_LCD();
+					print_game_clear_LCD();
+					cli();
+					game_state = 0;
+				}
 				if(warning >= 3){
 					print_game_over_LCD();
-					_delay_ms(500);
 					print_game_over_LCD();
-					_delay_ms(500);
-					warning = 0;
-					EIMSK = 0x00;		//버튼 인터럽트 금지.
-					cli();
+					cli();		//인터럽트 금지.
 					game_state = 0;
 				}
 			}
