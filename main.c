@@ -22,9 +22,9 @@ FILE INPUT = FDEV_SETUP_STREAM(NULL, UART0_receive, _FDEV_SETUP_READ);
 
 uint8_t random_array[2][8] = {  };
 uint8_t select_flag[2][8] = { 0, };		//각 숫자가 선택가능한 상태인지 표현.
-int row = 0;		//LCD의 행위치 지정변수
-int col = 0;		//LCD의 열위치 지정변수
-volatile uint8_t select = 0;
+int row = 0;							//LCD의 행위치 지정변수
+int col = 0;							//LCD의 열위치 지정변수
+volatile uint8_t select = 0;			//선택키 입력에 따라 값이 변경.
 
 ISR(INT0_vect){		//좌측키
 	if(col == 0 && row == 1){		//2행 1열에 있는 경우,
@@ -38,7 +38,7 @@ ISR(INT0_vect){		//좌측키
 ISR(INT1_vect){		//중간키
 	if(select == 0){		//첫번째 선택.
 		if(select_flag[row][col] != 1){
-			LCD_write_data(random_array[row][col] + 48);
+			LCD_write_data(random_array[row][col] + 48);		//선택한 위치의 숫자 출력
 			LCD_goto_XY(row, col);
 			select_flag[row][col] = 1;
 			select = 1;
@@ -51,11 +51,6 @@ ISR(INT1_vect){		//중간키
 			select_flag[row][col] = 1;
 			select = 2;
 		}
-	}
-	for(int i = 0; i < 2; i++){
-		for(int j = 0; j < 8; j++)
-			printf("%d ", select_flag[i][j]);
-		printf("\n");
 	}
 }
 
@@ -140,15 +135,17 @@ void print_game_board_LCD(){
 	LCD_goto_XY(0, 0);
 }
 int main(void){
-	int select_1[3] = {0,}, select_2[3] = {0,};
+	int select_1[3] = {0,}, select_2[3] = {0,};		//선택한 숫자의 행, 열, 값을 저장하는 배열.
 	uint8_t game_state = 0;			//게임 상태. 0 : 게임종료, 1 : 게임진행중
 	uint8_t fail_count = 0;
-	uint8_t flag = 0;
+	uint8_t flag = 0;				//while문안의 if문을 한번씩만 실행하도록 하기위한 변수.
+	int warning = 0;
 	
 	PORT_init();
 	
 	stdout = &OUTPUT;
 	stdin = &INPUT;
+	
 	while(1){
 		if(game_state == 0){		//게임 진행을 위해서 초기 설정부분.
 			LCD_clear();
@@ -169,7 +166,7 @@ int main(void){
 		else{						//실제 게임 시작.
 			while(game_state == 1){
 				LCD_goto_XY(row, col * 2);		//row, col의 범위가 0 ~ 7까지이므로, LCD에 2를 곱해서 출력.
-				PORTF = select;
+				PORTF |= ((0x01) << warning) - 1;
 				if(select == 1 && flag == 0){				//첫 번째 숫자를 선택했을 경우,
 					select_1[0] = row;
 					select_1[1] = col;
@@ -181,17 +178,19 @@ int main(void){
 					select_2[1] = col;
 					select_2[2] = random_array[row][col];
 					//숫자 선택 끝나고 정답 여부 확인.
-					if(select_1[2] == select_2[2]){
+					if(select_1[2] == select_2[2]){		//성공했을 경우,
 						printf("success\n");
 					}
-					else{
+					else{								//실패했을 경우,
 						printf("fail\n");
-						printf("%d,%d,%d  %d,%d,%d\n", select_1[0], select_1[1], select_1[2], select_2[0], select_2[1], select_2[2]);
+						warning++;
+						//실패했을 경우, 선택헀던 숫자를 다시 가려줌.
 						LCD_goto_XY(select_1[0], select_1[1] * 2);
 						LCD_write_data(165);
 						LCD_goto_XY(select_2[0], select_2[1] * 2);
 						LCD_write_data(165);
 						LCD_goto_XY(row, col);
+						//선택 플래그변수도 초기화
 						select_flag[select_1[0]][select_1[1]] = 0;
 						select_flag[select_2[0]][select_2[1]] = 0;
 					}
