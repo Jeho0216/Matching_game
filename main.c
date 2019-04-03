@@ -134,10 +134,44 @@ void print_game_board_LCD(){
 	}
 	LCD_goto_XY(0, 0);
 }
+
+void print_game_over_LCD(){
+	int i, j;
+	LCD_goto_XY(0, 0);
+	for(i = 0; i < 2; i++){
+		for(j = 0; j < 16; j++){
+			LCD_write_data(255);
+		}
+		LCD_goto_XY(1, 0);
+	}
+	LCD_goto_XY(0, 4);
+	LCD_write_string("GAME");
+	LCD_goto_XY(1, 8);
+	LCD_write_string("OVER");
+}
+
+void check_is_matched(int *select_1, int *select_2, int *warning){
+	if(select_1[2] == select_2[2]){		//성공했을 경우,
+		printf("success\n");
+	}
+	else{								//실패했을 경우,
+		printf("fail\n");
+		(*warning)++;
+		//실패했을 경우, 선택헀던 숫자를 다시 가려줌.
+		LCD_goto_XY(select_1[0], select_1[1] * 2);
+		LCD_write_data(165);
+		LCD_goto_XY(select_2[0], select_2[1] * 2);
+		LCD_write_data(165);
+		LCD_goto_XY(row, col);
+		//선택 플래그변수도 초기화
+		select_flag[select_1[0]][select_1[1]] = 0;
+		select_flag[select_2[0]][select_2[1]] = 0;
+	}
+}
+
 int main(void){
 	int select_1[3] = {0,}, select_2[3] = {0,};		//선택한 숫자의 행, 열, 값을 저장하는 배열.
 	uint8_t game_state = 0;			//게임 상태. 0 : 게임종료, 1 : 게임진행중
-	uint8_t fail_count = 0;
 	uint8_t flag = 0;				//while문안의 if문을 한번씩만 실행하도록 하기위한 변수.
 	int warning = 0;
 	
@@ -149,9 +183,12 @@ int main(void){
 	while(1){
 		if(game_state == 0){		//게임 진행을 위해서 초기 설정부분.
 			LCD_clear();
+			PORTF = 0x00;
 			LCD_goto_XY(0, 0);
-			LCD_write_string("Press 1rd button");
-			while((PIND & 0x01) != 0){};		//3번째 버튼 입력전까지 NOP
+			LCD_write_string("**Memory game**");
+			LCD_goto_XY(1, 0);
+			LCD_write_string("Press 1st KEY");
+			while((PIND & 0x01) != 0){};		//1번째 버튼 입력전까지 NOP
 			
 			create_random_num(random_array);
 			print_random_num_UART(random_array);
@@ -166,7 +203,6 @@ int main(void){
 		else{						//실제 게임 시작.
 			while(game_state == 1){
 				LCD_goto_XY(row, col * 2);		//row, col의 범위가 0 ~ 7까지이므로, LCD에 2를 곱해서 출력.
-				PORTF |= ((0x01) << warning) - 1;
 				if(select == 1 && flag == 0){				//첫 번째 숫자를 선택했을 경우,
 					select_1[0] = row;
 					select_1[1] = col;
@@ -178,24 +214,19 @@ int main(void){
 					select_2[1] = col;
 					select_2[2] = random_array[row][col];
 					//숫자 선택 끝나고 정답 여부 확인.
-					if(select_1[2] == select_2[2]){		//성공했을 경우,
-						printf("success\n");
-					}
-					else{								//실패했을 경우,
-						printf("fail\n");
-						warning++;
-						//실패했을 경우, 선택헀던 숫자를 다시 가려줌.
-						LCD_goto_XY(select_1[0], select_1[1] * 2);
-						LCD_write_data(165);
-						LCD_goto_XY(select_2[0], select_2[1] * 2);
-						LCD_write_data(165);
-						LCD_goto_XY(row, col);
-						//선택 플래그변수도 초기화
-						select_flag[select_1[0]][select_1[1]] = 0;
-						select_flag[select_2[0]][select_2[1]] = 0;
-					}
+					check_is_matched(select_1, select_2, &warning);
 					flag = 0;
 					select = 0;
+				}
+				PORTF |= ((0x01) << warning) - 1;		//경고 LED 출력. 0x01 -> 0x03 -> 0x07 순서대로 출력함.
+				if(warning >= 3){
+					print_game_over_LCD();
+					_delay_ms(500);
+					print_game_over_LCD();
+					_delay_ms(500);
+					warning = 0;
+					cli();		//버튼 인터럽트 금지.
+					game_state = 0;
 				}
 			}
 		}
