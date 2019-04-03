@@ -20,8 +20,11 @@
 FILE OUTPUT = FDEV_SETUP_STREAM(UART0_transmit, NULL, _FDEV_SETUP_WRITE);
 FILE INPUT = FDEV_SETUP_STREAM(NULL, UART0_receive, _FDEV_SETUP_READ);
 
+uint8_t random_array[2][8] = {  };
+uint8_t select_flag[2][8] = { 0, };		//각 숫자가 선택가능한 상태인지 표현.
 int row = 0;		//LCD의 행위치 지정변수
 int col = 0;		//LCD의 열위치 지정변수
+volatile uint8_t select = 0;
 
 ISR(INT0_vect){		//좌측키
 	if(col == 0 && row == 1){		//2행 1열에 있는 경우,
@@ -29,11 +32,31 @@ ISR(INT0_vect){		//좌측키
 		col = 7;		//1행 14열로 이동.
 	}
 	else if(col != 0)
-		col--;
+	col--;
 }
 
 ISR(INT1_vect){		//중간키
-	
+	if(select == 0){		//첫번째 선택.
+		if(select_flag[row][col] != 1){
+			LCD_write_data(random_array[row][col] + 48);
+			LCD_goto_XY(row, col);
+			select_flag[row][col] = 1;
+			select = 1;
+		}
+	}
+	else if(select == 1){
+		if(select_flag[row][col] != 1){
+			LCD_write_data(random_array[row][col] + 48);
+			LCD_goto_XY(row, col);
+			select_flag[row][col] = 1;
+			select = 2;
+		}
+	}
+	for(int i = 0; i < 2; i++){
+		for(int j = 0; j < 8; j++)
+			printf("%d ", select_flag[i][j]);
+		printf("\n");
+	}
 }
 
 ISR(INT2_vect){		//우측키
@@ -58,10 +81,6 @@ void INT0_init(){
 	EIMSK = (1 << INT0 | 1 << INT1 | 1 << INT2);
 	EICRA = (1 << ISC01 | 1 << ISC11 | 1 << ISC21);
 	sei();
-}
-
-void game_initialize(){
-	
 }
 
 void create_random_num(uint8_t array[][8]){
@@ -103,14 +122,28 @@ void print_random_num_LCD(uint8_t array[][8]){		//CLCD에 정답 출력.
 			LCD_write_data(array[i][j] + 48);
 			LCD_write_data(32);
 			_delay_ms(20);
+		}
+		LCD_goto_XY(1, 0);
 	}
-	LCD_goto_XY(1, 0);
 }
+
+void print_game_board_LCD(){
+	int i, j;
+	LCD_goto_XY(0, 0);
+	for(i = 0; i < 2; i++){
+		for(j = 0; j < 8; j++){
+			LCD_write_data(165);
+			LCD_write_data(32);
+		}
+		LCD_goto_XY(1, 0);
+	}
+	LCD_goto_XY(0, 0);
 }
 int main(void){
-	uint8_t random_array[2][8] = {  };
-	int i, j;
+	int select_1[3] = {0,}, select_2[3] = {0,};
 	uint8_t game_state = 0;			//게임 상태. 0 : 게임종료, 1 : 게임진행중
+	uint8_t fail_count = 0;
+	uint8_t flag = 0;
 	
 	PORT_init();
 	
@@ -120,24 +153,15 @@ int main(void){
 		if(game_state == 0){		//게임 진행을 위해서 초기 설정부분.
 			LCD_clear();
 			LCD_goto_XY(0, 0);
-			LCD_write_string("Press 2rd button");
-			while((PIND & 0x02) != 0){};		//3번째 버튼 입력전까지 NOP
+			LCD_write_string("Press 1rd button");
+			while((PIND & 0x01) != 0){};		//3번째 버튼 입력전까지 NOP
 			
 			create_random_num(random_array);
 			print_random_num_UART(random_array);
 			print_random_num_LCD(random_array);
 			_delay_ms(2000);
 			//정답을 보여주고 5초뒤 숫자를 가려줌.
-			LCD_goto_XY(0, 0);
-			for(i = 0; i < 2; i++){
-				for(j = 0; j < 8; j++){
-					LCD_write_data(165);
-					LCD_write_data(32);
-					_delay_ms(20);
-				}
-				LCD_goto_XY(1, 0);
-			}
-			LCD_goto_XY(0, 0);
+			print_game_board_LCD();
 			INT0_init();			//여기서부터 인터럽트 허용.
 			LCD_write_command(0x0F);
 			game_state = 1;
@@ -145,6 +169,35 @@ int main(void){
 		else{						//실제 게임 시작.
 			while(game_state == 1){
 				LCD_goto_XY(row, col * 2);		//row, col의 범위가 0 ~ 7까지이므로, LCD에 2를 곱해서 출력.
+				PORTF = select;
+				if(select == 1 && flag == 0){				//첫 번째 숫자를 선택했을 경우,
+					select_1[0] = row;
+					select_1[1] = col;
+					select_1[2] = random_array[row][col];
+					flag = 1;
+				}
+				else if(select == 2 && flag == 1){			//두 번째 숫자를 선택했을 경우,
+					select_2[0] = row;
+					select_2[1] = col;
+					select_2[2] = random_array[row][col];
+					//숫자 선택 끝나고 정답 여부 확인.
+					if(select_1[2] == select_2[2]){
+						printf("success\n");
+					}
+					else{
+						printf("fail\n");
+						printf("%d,%d,%d  %d,%d,%d\n", select_1[0], select_1[1], select_1[2], select_2[0], select_2[1], select_2[2]);
+						LCD_goto_XY(select_1[0], select_1[1] * 2);
+						LCD_write_data(165);
+						LCD_goto_XY(select_2[0], select_2[1] * 2);
+						LCD_write_data(165);
+						LCD_goto_XY(row, col);
+						select_flag[select_1[0]][select_1[1]] = 0;
+						select_flag[select_2[0]][select_2[1]] = 0;
+					}
+					flag = 0;
+					select = 0;
+				}
 			}
 		}
 	}
