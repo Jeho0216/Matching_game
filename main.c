@@ -32,7 +32,12 @@ ISR(INT0_vect){		//좌측키
 		col = 7;		//1행 14열로 이동.
 	}
 	else if(col != 0)
-	col--;
+		col--;
+	else if(col == 0 && row == 0){
+		row++;
+		col = 7;
+	}
+
 }
 
 ISR(INT1_vect){		//중간키
@@ -62,6 +67,10 @@ ISR(INT2_vect){		//우측키
 	}
 	else if(col != 7)
 		col++;
+	else if(col == 7 && row == 1){
+		row--;
+		col = 0;
+	}
 }
 
 void PORT_init(){
